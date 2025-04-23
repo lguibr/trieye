@@ -442,6 +442,14 @@ class TrieyeActor:
 
     # --- Utility Methods ---
 
+    def get_actor_name(self) -> str:
+        """Returns the configured name of the actor (from TrieyeConfig)."""
+        # The actor's name used in ray.get_actor() is set during creation.
+        # We return the name from the config used to create it.
+        return (
+            f"trieye_actor_{self.config.run_name}"  # Reconstruct the name used in setup
+        )
+
     def get_mlflow_run_id(self) -> str | None:
         """Returns the active MLflow run ID."""
         return self.mlflow_run_id
