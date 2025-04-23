@@ -3,24 +3,17 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from mlflow.tracking import MlflowClient
-from torch.utils.tensorboard import SummaryWriter
-
-# Use relative imports within trieye
 from .actor_state import ActorState
 from .exceptions import ConfigurationError, ProcessingError, SerializationError
 from .path_manager import PathManager
-from .schemas import (
-    BufferData,
-    CheckpointData,
-    LoadedTrainingState,
-    LogContext,
-    RawMetricEvent,
-)
+from .schemas import CheckpointData, LoadedTrainingState, LogContext, RawMetricEvent
 from .serializer import Serializer
 from .stats_processor import StatsProcessor
 
 if TYPE_CHECKING:
+    from mlflow.tracking import MlflowClient
+    from torch.utils.tensorboard import SummaryWriter
+
     from .config import TrieyeConfig
 
 logger = logging.getLogger(__name__)
@@ -28,9 +21,9 @@ logger = logging.getLogger(__name__)
 
 class ActorLogic:
     """
-    Encapsulates the core logic for statistics processing, persistence,
-    and interactions between components, independent of Ray actor specifics.
-    Owned and used by the TrieyeActor.
+    Encapsulates the core, non-Ray-specific logic for statistics processing
+    and data persistence. Orchestrates interactions between state, paths,
+    serialization, and processing.
     """
 
     def __init__(
@@ -40,8 +33,8 @@ class ActorLogic:
         path_manager: PathManager,
         serializer: Serializer,
         mlflow_run_id: str | None,
-        mlflow_client: MlflowClient | None,
-        tb_writer: SummaryWriter | None,
+        mlflow_client: "MlflowClient | None",
+        tb_writer: "SummaryWriter | None",
     ):
         self.config = config
         self.actor_state = actor_state
@@ -51,161 +44,125 @@ class ActorLogic:
         self.mlflow_client = mlflow_client
         self.tb_writer = tb_writer
 
-        # Initialize StatsProcessor here, passing dependencies
-        self.stats_processor = StatsProcessor(
-            config=self.config.stats,
-            run_name=self.config.run_name,
-            tb_writer=self.tb_writer,
-            mlflow_run_id=self.mlflow_run_id,
-            _mlflow_client=self.mlflow_client,  # Pass client
-        )
+        self.stats_processor: StatsProcessor | None = None
+        if self.config.stats.metrics:
+            self.stats_processor = StatsProcessor(
+                config=self.config.stats,
+                run_name=self.config.run_name,
+                tb_writer=self.tb_writer,
+                mlflow_run_id=self.mlflow_run_id,
+                _mlflow_client=self.mlflow_client,
+            )
+            # Initialize processor's log times from actor state's initial value
+            # Assumes ActorState.__init__ correctly initializes the attribute
+            self.stats_processor._last_log_time = (
+                self.actor_state._last_log_time_per_metric.copy()
+            )
+        else:
+            logger.warning(
+                "No metrics defined in StatsConfig. StatsProcessor not initialized."
+            )
+
         logger.info("ActorLogic initialized.")
 
     def process_and_log_metrics(
         self, raw_data: dict[int, dict[str, list[RawMetricEvent]]], context: LogContext
     ):
-        """Delegates processing and logging to the StatsProcessor."""
+        """Processes raw data and logs aggregated metrics using StatsProcessor."""
         if not self.stats_processor:
-            logger.error("StatsProcessor not initialized in ActorLogic.")
-            raise ConfigurationError("StatsProcessor not available.")
+            logger.debug("StatsProcessor not available, skipping metric processing.")
+            return
         try:
+            # Update processor's state from actor state before processing
+            self.stats_processor._last_log_time = (
+                self.actor_state._last_log_time_per_metric.copy()
+            )
+
             self.stats_processor.process_and_log(raw_data, context)
+
+            # Update actor state from processor state after processing
+            self.actor_state._last_log_time_per_metric = (
+                self.stats_processor._last_log_time.copy()
+            )
         except ProcessingError as e:
             logger.error(f"Error during metric processing: {e}", exc_info=True)
-            # Re-raise or handle as appropriate
-            raise
         except Exception as e:
             logger.error(
                 f"Unexpected error during metric processing: {e}", exc_info=True
             )
-            raise ProcessingError("Unexpected error in process_and_log_metrics") from e
 
-    def load_initial_state(
-        self, _auto_resume_run_name: str | None = None
-    ) -> LoadedTrainingState:
+    def load_initial_state(self) -> LoadedTrainingState:
         """
-        Loads the initial training state (checkpoint and buffer).
-        Prioritizes auto-resume from the latest previous run if enabled.
-
-        Args:
-            _auto_resume_run_name: If provided, forces auto-resume logic to
-                                   look for files within this specific run name.
-                                   Used primarily for testing save/load within the same run.
-
-        Returns:
-            LoadedTrainingState containing potentially loaded data.
+        Loads the initial training state (checkpoint and buffer) based on config.
+        Handles auto-resume logic and explicit path overrides from PersistenceConfig.
         """
-        logger.info("Attempting to load initial state...")
-        loaded_checkpoint_data: CheckpointData | None = None
-        loaded_buffer_data: BufferData | None = None
-        checkpoint_run_name: str | None = None  # Track which run checkpoint came from
+        checkpoint_data: CheckpointData | None = None
+        buffer_data = None
+        checkpoint_run_name: str | None = None
 
-        # --- Determine Checkpoint Path ---
-        # Simplified: Removed hypothetical config loading paths
-        # auto_resume = self.config.persistence.AUTO_RESUME # Assuming AUTO_RESUME exists
-        auto_resume = True  # Defaulting to True for now, add to config later if needed
+        auto_resume = self.config.persistence.AUTO_RESUME_LATEST
+        load_checkpoint_path_override = self.config.persistence.LOAD_CHECKPOINT_PATH
+        load_buffer_path_override = self.config.persistence.LOAD_BUFFER_PATH
 
-        # Find latest previous run if auto-resuming
-        latest_previous_run_name: str | None = None
-        if auto_resume or _auto_resume_run_name:
-            target_run = _auto_resume_run_name or self.config.run_name
-            latest_previous_run_name = self.path_manager.find_latest_run_dir(
-                current_run_name=target_run
-            )
+        checkpoint_path = self.path_manager.determine_checkpoint_to_load(
+            load_checkpoint_path_override, auto_resume
+        )
 
-        checkpoint_to_load: Path | None = None
-        # Try auto-resume from latest previous run
-        if latest_previous_run_name:
-            potential_latest_path = self.path_manager.get_checkpoint_path(
-                run_name=latest_previous_run_name, is_latest=True
-            )
-            if potential_latest_path.exists():
-                checkpoint_to_load = potential_latest_path.resolve()
-                checkpoint_run_name = latest_previous_run_name
-                logger.info(
-                    f"Auto-resuming from latest checkpoint in '{latest_previous_run_name}': {checkpoint_to_load}"
-                )
-            else:
-                logger.info(
-                    f"Latest checkpoint link not found in run '{latest_previous_run_name}'."
-                )
-
-        # --- Load Checkpoint ---
-        if checkpoint_to_load:
+        if checkpoint_path:
             try:
-                loaded_checkpoint_data = self.serializer.load_checkpoint(
-                    checkpoint_to_load
-                )
-                if loaded_checkpoint_data:
+                checkpoint_data = self.serializer.load_checkpoint(checkpoint_path)
+                if checkpoint_data:
+                    self.actor_state.restore_from_state(checkpoint_data.actor_state)
+                    checkpoint_run_name = checkpoint_data.run_name
                     logger.info(
-                        f"Successfully loaded checkpoint from step {loaded_checkpoint_data.global_step}."
-                    )
-                    # Restore actor state immediately after loading checkpoint
-                    self.actor_state.restore_from_state(
-                        loaded_checkpoint_data.actor_state
+                        f"Checkpoint loaded successfully from {checkpoint_path} (Run: {checkpoint_run_name}, Step: {checkpoint_data.global_step})"
                     )
                 else:
-                    # Serializer already logged error, reset run name if load failed
-                    checkpoint_run_name = None
-            except SerializationError:
-                # Serializer already logged error, reset run name
-                checkpoint_run_name = None
-                logger.error(f"Failed to load checkpoint from {checkpoint_to_load}.")
-
-        # --- Determine Buffer Path ---
-        # Simplified: Removed hypothetical config loading paths
-        buffer_to_load: Path | None = None
-
-        # 1. Try buffer from the same run as the loaded checkpoint
-        if checkpoint_run_name:
-            potential_buffer_path = self.path_manager.get_buffer_path(
-                run_name=checkpoint_run_name
-            )
-            if potential_buffer_path.exists():
-                buffer_to_load = potential_buffer_path.resolve()
-                logger.info(
-                    f"Loading buffer from checkpoint run '{checkpoint_run_name}': {buffer_to_load}"
-                )
-            else:
-                logger.info(
-                    f"Buffer file not found in checkpoint run '{checkpoint_run_name}'."
-                )
-
-        # 2. Try buffer from the latest previous run (if auto-resuming and no checkpoint was loaded or buffer wasn't found there)
-        elif (
-            latest_previous_run_name
-        ):  # Use elif to avoid checking again if checkpoint_run_name was set
-            potential_buffer_path = self.path_manager.get_buffer_path(
-                run_name=latest_previous_run_name
-            )
-            if potential_buffer_path.exists():
-                buffer_to_load = potential_buffer_path.resolve()
-                logger.info(
-                    f"Auto-resuming buffer from latest previous run '{latest_previous_run_name}': {buffer_to_load}"
-                )
-            else:
-                logger.info(
-                    f"Buffer file not found in latest previous run '{latest_previous_run_name}'."
-                )
-
-        # --- Load Buffer ---
-        if buffer_to_load:
-            try:
-                loaded_buffer_data = self.serializer.load_buffer(buffer_to_load)
-                if loaded_buffer_data:
-                    logger.info(
-                        f"Successfully loaded buffer with {len(loaded_buffer_data.buffer_list)} items."
+                    logger.warning(
+                        f"Serializer returned None for checkpoint: {checkpoint_path}"
                     )
-            except SerializationError:
-                # Serializer already logged error
-                logger.error(f"Failed to load buffer from {buffer_to_load}.")
+            except SerializationError as e:
+                logger.error(f"Failed to load checkpoint: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error loading checkpoint: {e}", exc_info=True)
 
-        if not loaded_checkpoint_data and not loaded_buffer_data:
-            logger.info("No previous state found or loaded.")
+        buffer_path = self.path_manager.determine_buffer_to_load(
+            load_buffer_path_override, auto_resume, checkpoint_run_name
+        )
+
+        if buffer_path and self.config.persistence.SAVE_BUFFER:
+            try:
+                buffer_data = self.serializer.load_buffer(buffer_path)
+                if buffer_data:
+                    logger.info(f"Buffer loaded successfully from {buffer_path}")
+                else:
+                    logger.warning(
+                        f"Serializer returned None for buffer: {buffer_path}"
+                    )
+            except SerializationError as e:
+                logger.error(f"Failed to load buffer: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error loading buffer: {e}", exc_info=True)
+        elif self.config.persistence.SAVE_BUFFER:
+            logger.info("Buffer loading skipped (no suitable path found).")
+        else:
+            logger.info("Buffer loading skipped (SAVE_BUFFER is False).")
 
         return LoadedTrainingState(
-            checkpoint_data=loaded_checkpoint_data, buffer_data=loaded_buffer_data
+            checkpoint_data=checkpoint_data, buffer_data=buffer_data
         )
+
+    def _log_artifact_safe(self, local_path: Path, artifact_path: str):
+        """Safely logs an artifact to MLflow if the client exists and path is valid."""
+        if self.mlflow_client and self.mlflow_run_id and local_path.exists():
+            try:
+                self.mlflow_client.log_artifact(
+                    self.mlflow_run_id, str(local_path), artifact_path=artifact_path
+                )
+            except Exception as e:
+                logger.error(f"Failed to log artifact {local_path} to MLflow: {e}")
+        elif not local_path.exists():
+            logger.warning(f"Cannot log artifact, path does not exist: {local_path}")
 
     def save_training_state(
         self,
@@ -222,112 +179,91 @@ class ActorLogic:
         env_config_dict: dict | None = None,
         user_data: dict | None = None,
     ):
-        """Saves the training state (checkpoint and optionally buffer)."""
-        logger.debug(f"Preparing to save state at step {global_step}...")
+        """Saves checkpoint and optionally buffer, updating links and logging artifacts."""
+        if not self.serializer or not self.path_manager:
+            raise ConfigurationError("Serializer or PathManager not initialized.")
+
+        # --- Save Checkpoint ---
+        step_checkpoint_path: Path | None = None
         try:
-            # Prepare optimizer state (e.g., move to CPU)
-            prepared_opt_state = self.serializer.prepare_optimizer_state(
+            opt_state_cpu = self.serializer.prepare_optimizer_state(
                 optimizer_state_dict
             )
-
-            # Create CheckpointData object
             checkpoint_data = CheckpointData(
                 run_name=self.config.run_name,
                 global_step=global_step,
                 episodes_played=episodes_played,
                 total_simulations_run=total_simulations_run,
                 model_state_dict=nn_state_dict,
-                optimizer_state_dict=prepared_opt_state,
+                optimizer_state_dict=opt_state_cpu,
                 actor_state=actor_state_data,
                 user_data=user_data or {},
                 model_config_dict=model_config_dict or {},
                 env_config_dict=env_config_dict or {},
             )
+            step_checkpoint_path = self.path_manager.get_checkpoint_path(
+                step=global_step
+            )
+            self.serializer.save_checkpoint(checkpoint_data, step_checkpoint_path)
+            self.path_manager.update_checkpoint_links(step_checkpoint_path, is_best)
 
-            # Save checkpoint file
-            cp_path = self.path_manager.get_checkpoint_path(step=global_step)
-            self.serializer.save_checkpoint(checkpoint_data, cp_path)
-
-            # Update latest/best links
-            self.path_manager.update_checkpoint_links(cp_path, is_best=is_best)
-
-            # Log checkpoint artifact to MLflow
-            self._log_artifact_safe(cp_path, "checkpoints")
-            # Log link artifacts
-            latest_cp_path = self.path_manager.get_checkpoint_path(is_latest=True)
-            self._log_artifact_safe(latest_cp_path, "checkpoints")
+            self._log_artifact_safe(step_checkpoint_path, "checkpoints")
+            self._log_artifact_safe(
+                self.path_manager.latest_checkpoint_path, "checkpoints"
+            )
             if is_best:
-                best_cp_path = self.path_manager.get_checkpoint_path(is_best=True)
-                self._log_artifact_safe(best_cp_path, "checkpoints")
-
-            # Save buffer if requested
-            if save_buffer and self.config.persistence.SAVE_BUFFER:
-                logger.debug(
-                    f"Preparing buffer data (size: {len(buffer_content)}) for saving..."
+                self._log_artifact_safe(
+                    self.path_manager.best_checkpoint_path, "checkpoints"
                 )
+
+        except (SerializationError, OSError) as e:
+            logger.error(f"Failed to save checkpoint at step {global_step}: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error saving checkpoint: {e}", exc_info=True)
+
+        # --- Save Buffer (if requested and configured) ---
+        step_buffer_path: Path | None = None
+        if save_buffer and self.config.persistence.SAVE_BUFFER:
+            try:
                 buffer_data = self.serializer.prepare_buffer_data(buffer_content)
                 if buffer_data:
-                    buf_path = self.path_manager.get_buffer_path(step=global_step)
-                    self.serializer.save_buffer(buffer_data, buf_path)
-                    # Update buffer link
-                    self.path_manager.update_buffer_link(buf_path)
-                    # Log buffer artifact to MLflow
-                    self._log_artifact_safe(buf_path, "buffers")
-                    latest_buf_path = self.path_manager.get_buffer_path()
-                    self._log_artifact_safe(latest_buf_path, "buffers")
-                else:
-                    logger.warning(
-                        f"Buffer saving skipped at step {global_step} due to preparation error."
+                    step_buffer_path = self.path_manager.get_buffer_path(
+                        step=global_step
                     )
+                    self.serializer.save_buffer(buffer_data, step_buffer_path)
+                    self.path_manager.update_buffer_link(step_buffer_path)
 
-            logger.info(f"Training state saved successfully at step {global_step}.")
-
-        except SerializationError as e:
-            logger.error(f"Serialization failed during save_training_state: {e}")
-        except Exception as e:
-            logger.error(
-                f"Unexpected error during save_training_state: {e}", exc_info=True
-            )
+                    self._log_artifact_safe(step_buffer_path, "buffers")
+                    self._log_artifact_safe(
+                        self.path_manager.default_buffer_path, "buffers"
+                    )
+                else:
+                    logger.error(
+                        f"Failed to prepare buffer data at step {global_step}, cannot save."
+                    )
+            except (SerializationError, OSError) as e:
+                logger.error(f"Failed to save buffer at step {global_step}: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error saving buffer: {e}", exc_info=True)
 
     def save_initial_config(self):
-        """Saves the initial TrieyeConfig to JSON and logs it."""
+        """Saves the initial TrieyeConfig to JSON."""
         try:
-            # Use get_config_path() method
             config_path = self.path_manager.get_config_path()
             self.serializer.save_config_json(self.config.model_dump(), config_path)
             self._log_artifact_safe(config_path, "config")
-        except SerializationError as e:
+        except (SerializationError, OSError) as e:
             logger.error(f"Failed to save initial config: {e}")
         except Exception as e:
             logger.error(f"Unexpected error saving initial config: {e}", exc_info=True)
 
     def save_run_config(self, configs: dict[str, Any]):
-        """Saves a combined configuration dictionary as a JSON artifact."""
+        """Saves a combined configuration dictionary as JSON and logs to MLflow."""
         try:
-            # Use get_config_path() method
             config_path = self.path_manager.get_config_path()
             self.serializer.save_config_json(configs, config_path)
             self._log_artifact_safe(config_path, "config")
-        except SerializationError as e:
+        except (SerializationError, OSError) as e:
             logger.error(f"Failed to save run config: {e}")
         except Exception as e:
             logger.error(f"Unexpected error saving run config: {e}", exc_info=True)
-
-    def _log_artifact_safe(self, local_path: Path, artifact_path: str | None = None):
-        """Logs an artifact to MLflow, handling potential errors."""
-        if self.mlflow_client and self.mlflow_run_id:
-            if not local_path.exists():
-                logger.warning(f"Attempted to log non-existent artifact: {local_path}")
-                return
-            try:
-                self.mlflow_client.log_artifact(
-                    self.mlflow_run_id, str(local_path), artifact_path=artifact_path
-                )
-                logger.debug(
-                    f"Logged artifact '{local_path.name}' to MLflow path '{artifact_path or '.'}'."
-                )
-            except Exception as e:
-                logger.error(
-                    f"Failed to log artifact {local_path} to MLflow: {e}",
-                    exc_info=True,
-                )

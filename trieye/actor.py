@@ -30,8 +30,7 @@ class TrieyeActor:
     Ray actor combining statistics collection/processing and data persistence.
     Manages MLflow runs, TensorBoard logging, checkpointing, and buffer saving.
     Delegates logic to ActorState and ActorLogic.
-
-    Allows injection of components for testing purposes via _setup_mock_dependencies.
+    Derives all paths internally based on the provided TrieyeConfig.
     """
 
     def __init__(
@@ -41,7 +40,6 @@ class TrieyeActor:
         _path_manager: PathManager | None = None,
         _serializer: Serializer | None = None,
         _actor_state: ActorState | None = None,
-        # Constructor injection is less preferred now due to serialization issues
         _mlflow_client: MlflowClient | None = None,
         _tb_writer: SummaryWriter | None = None,
     ):
@@ -51,6 +49,7 @@ class TrieyeActor:
         self.config = config
         self._lock = threading.Lock()
 
+        # --- Initialize Core Components ---
         self.path_manager = _path_manager or PathManager(self.config.persistence)
         self.serializer = _serializer or Serializer()
         self.actor_state = _actor_state or ActorState()
@@ -59,15 +58,13 @@ class TrieyeActor:
         self.mlflow_client: MlflowClient | MagicMock | None = _mlflow_client
         self.tb_writer: SummaryWriter | MagicMock | None = _tb_writer
         self.mlflow_run_id: str | None = None
-        self.tb_log_dir: Path | None = (
-            self.path_manager.tb_log_dir
-        )  # Get path initially
+        self.tb_log_dir: Path = self.path_manager.tb_log_dir
 
         # Initialize tracking only if mocks weren't directly injected
         if _mlflow_client is None and _tb_writer is None:
             self._initialize_tracking()
         elif _mlflow_client:
-            if hasattr(_mlflow_client, "_mock_run_id"):  # Handle injected mock
+            if hasattr(_mlflow_client, "_mock_run_id"):
                 self.mlflow_run_id = _mlflow_client._mock_run_id  # type: ignore[attr-defined]
             logger.info("Using constructor-injected MLflow client.")
         if _tb_writer:
@@ -75,34 +72,28 @@ class TrieyeActor:
                 self.tb_log_dir = Path(_tb_writer.log_dir)
             logger.info("Using constructor-injected TensorBoard writer.")
 
-        # Initialize logic handler
+        # Initialize logic handler AFTER tracking is potentially initialized
         self.logic = ActorLogic(
             config=self.config,
             actor_state=self.actor_state,
             path_manager=self.path_manager,
             serializer=self.serializer,
             mlflow_run_id=self.mlflow_run_id,
-            mlflow_client=self.mlflow_client,  # type: ignore[arg-type] # Allow MagicMock
-            tb_writer=self.tb_writer,  # type: ignore[arg-type] # Allow MagicMock
+            mlflow_client=self.mlflow_client,  # type: ignore[arg-type]
+            tb_writer=self.tb_writer,  # type: ignore[arg-type]
         )
 
         # --- File Logging ---
-        self.log_file_path = (
-            self.path_manager.log_dir / f"{self.config.run_name}_trieye.log"
-        )
+        self.log_file_path = self.path_manager.get_log_file_path()
         self._file_handler: logging.FileHandler | None = None
-        if (
-            _path_manager is None
-        ):  # Only setup if not testing with injected path manager
+        if _path_manager is None:
             self._setup_file_logging()
-            self._log_paths_to_mlflow()
 
         # --- Final Setup ---
-        if (
-            _path_manager is None
-        ):  # Only setup if not testing with injected path manager
+        if _path_manager is None:
             self.path_manager.create_run_directories()
             self.logic.save_initial_config()
+            self._log_paths_to_mlflow()
 
         logger.info(
             f"TrieyeActor initialized for App: '{self.config.app_name}', Run: '{self.config.run_name}'. "
@@ -113,7 +104,7 @@ class TrieyeActor:
         """Initializes MLflow run and TensorBoard writer. Only called if not injected."""
         # MLflow
         try:
-            mlflow_uri = self.config.persistence.MLFLOW_TRACKING_URI
+            mlflow_uri = self.path_manager.persist_config.MLFLOW_TRACKING_URI
             mlflow.set_tracking_uri(mlflow_uri)
             mlflow.set_experiment(self.config.app_name)
             active_run = mlflow.active_run()
@@ -151,18 +142,17 @@ class TrieyeActor:
             self.mlflow_client = None
 
         # TensorBoard
-        if self.tb_log_dir:
-            try:
-                self.tb_writer = SummaryWriter(log_dir=str(self.tb_log_dir))
-                logger.info(f"TensorBoard writer initialized at {self.tb_log_dir}")
-                if hasattr(self, "logic") and self.logic:
-                    self.logic.tb_writer = self.tb_writer
-                    if self.logic.stats_processor:
-                        self.logic.stats_processor.tb_writer = self.tb_writer
-            except Exception as e:
-                logger.error(f"Failed to initialize TensorBoard writer: {e}")
-        else:
-            logger.warning("TensorBoard log directory path is not set.")
+        try:
+            self.tb_writer = SummaryWriter(log_dir=str(self.path_manager.tb_log_dir))
+            logger.info(
+                f"TensorBoard writer initialized at {self.path_manager.tb_log_dir}"
+            )
+            if hasattr(self, "logic") and self.logic:
+                self.logic.tb_writer = self.tb_writer
+                if self.logic.stats_processor:
+                    self.logic.stats_processor.tb_writer = self.tb_writer
+        except Exception as e:
+            logger.error(f"Failed to initialize TensorBoard writer: {e}")
 
     def _setup_mock_dependencies(self, mock_mlflow_run_id: str, mock_tb_log_dir: str):
         """
@@ -178,7 +168,7 @@ class TrieyeActor:
         self.mlflow_client.log_param = MagicMock(side_effect=None)
         self.mlflow_client.log_artifact = MagicMock(side_effect=None)
         self.mlflow_client.log_artifacts = MagicMock(side_effect=None)
-        self.mlflow_client._mock_run_id = mock_mlflow_run_id  # Store the ID if needed
+        self.mlflow_client._mock_run_id = mock_mlflow_run_id
         self.mlflow_run_id = mock_mlflow_run_id
 
         # Create mock TensorBoard writer
@@ -186,7 +176,7 @@ class TrieyeActor:
         self.tb_writer.add_scalar = MagicMock()
         self.tb_writer.flush = MagicMock()
         self.tb_writer.close = MagicMock()
-        self.tb_writer.log_dir = mock_tb_log_dir  # Set log_dir attribute
+        self.tb_writer.log_dir = mock_tb_log_dir
         self.tb_log_dir = Path(mock_tb_log_dir)
 
         # Update the logic handler's references
@@ -194,28 +184,28 @@ class TrieyeActor:
             self.logic.mlflow_client = self.mlflow_client
             self.logic.tb_writer = self.tb_writer
             self.logic.mlflow_run_id = self.mlflow_run_id
-            # Update stats processor's client too
             if self.logic.stats_processor:
                 self.logic.stats_processor.mlflow_client = self.mlflow_client
                 self.logic.stats_processor.mlflow_run_id = self.mlflow_run_id
                 self.logic.stats_processor.tb_writer = self.tb_writer
         logger.info("Internal mock dependencies set.")
-        # Return the run ID to confirm setup
         return self.mlflow_run_id
 
     def _log_paths_to_mlflow(self):
-        """Logs relevant paths to MLflow parameters if client is available."""
+        """Logs relevant paths derived by PathManager to MLflow parameters."""
         if (
             not self.mlflow_client
             or not self.mlflow_run_id
             or isinstance(self.mlflow_client, MagicMock)
         ):
-            # Skip if client is a mock or not available
             return
 
         paths_to_log = {
-            "tensorboard_log_dir": self.tb_log_dir,
-            "trieye_log_file": self.log_file_path,
+            "tensorboard_log_dir": self.path_manager.tb_log_dir,
+            "trieye_log_file": self.path_manager.get_log_file_path(),
+            "checkpoints_dir": self.path_manager.checkpoint_dir,
+            "buffers_dir": self.path_manager.buffer_dir,
+            "profile_dir": self.path_manager.profile_dir,
         }
 
         for key, path_obj in paths_to_log.items():
@@ -231,7 +221,6 @@ class TrieyeActor:
                     )
                     path_str = f"Error: {e}"
                 try:
-                    # Ensure client is not the mock before calling
                     if self.mlflow_client and not isinstance(
                         self.mlflow_client, MagicMock
                     ):
@@ -240,8 +229,9 @@ class TrieyeActor:
                     logger.error(f"Failed to log {key} param to MLflow: {log_e}")
 
     def _setup_file_logging(self):
-        """Sets up file logging for this actor. Only called if not injected."""
+        """Sets up file logging for this actor using PathManager."""
         try:
+            self.log_file_path = self.path_manager.get_log_file_path()
             self.log_file_path.parent.mkdir(parents=True, exist_ok=True)
             self._file_handler = logging.FileHandler(self.log_file_path, mode="a")
             formatter = logging.Formatter(
@@ -373,15 +363,17 @@ class TrieyeActor:
     # --- Data Persistence Methods (Delegate to ActorLogic) ---
 
     def load_initial_state(
-        self, _auto_resume_run_name: str | None = None
+        self,
+        _auto_resume_run_name: (
+            str | None
+        ) = None,  # Keep arg for compatibility, but ignore
     ) -> LoadedTrainingState:
         """Loads the initial training state (checkpoint and buffer)."""
         if not hasattr(self, "logic") or self.logic is None:
             logger.error("ActorLogic not initialized in load_initial_state.")
             return LoadedTrainingState(checkpoint_data=None, buffer_data=None)
-        return self.logic.load_initial_state(
-            _auto_resume_run_name=_auto_resume_run_name
-        )
+        # ActorLogic now uses self.config.persistence internally
+        return self.logic.load_initial_state()
 
     def save_training_state(
         self,
@@ -444,11 +436,7 @@ class TrieyeActor:
 
     def get_actor_name(self) -> str:
         """Returns the configured name of the actor (from TrieyeConfig)."""
-        # The actor's name used in ray.get_actor() is set during creation.
-        # We return the name from the config used to create it.
-        return (
-            f"trieye_actor_{self.config.run_name}"  # Reconstruct the name used in setup
-        )
+        return f"trieye_actor_{self.config.run_name}"
 
     def get_mlflow_run_id(self) -> str | None:
         """Returns the active MLflow run ID."""
@@ -510,7 +498,6 @@ class TrieyeActor:
                 logger.error(f"Error closing file logger: {e}")
 
         try:
-            # Only end run if it's not a mock and was likely started by this actor
             if self.mlflow_run_id and not isinstance(self.mlflow_client, MagicMock):
                 active_run = mlflow.active_run()
                 if active_run and active_run.info.run_id == self.mlflow_run_id:

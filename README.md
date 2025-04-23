@@ -1,4 +1,6 @@
 
+# File: trieye/README.md
+
 [![CI Status](https://github.com/lguibr/trieye/actions/workflows/ci_cd.yml/badge.svg)](https://github.com/lguibr/trieye/actions/workflows/ci_cd.yml)
 [![PyPI version](https://badge.fury.io/py/trieye.svg)](https://badge.fury.io/py/trieye)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -20,7 +22,7 @@ Trieye is a Python library designed to provide **asynchronous statistics collect
 *   **Flexible Event System:** Applications send raw metric data points (`RawMetricEvent`) to the actor, tagged with a global step and optional context dictionary. Events with non-finite values are automatically skipped.
 *   **Asynchronous Processing:** The actor buffers raw events (`ActorState`) and processes/aggregates them periodically (`ActorLogic`, `StatsProcessor`) based on configuration, preventing blocking in the main application.
 *   **MLflow & TensorBoard Integration:** Automatically initializes and manages MLflow runs and TensorBoard writers within the actor, logging processed metrics and specified artifacts (checkpoints, buffers, configs).
-*   **Data Persistence:** Handles saving and loading of application state (e.g., model checkpoints, replay buffers) using `cloudpickle` and Pydantic schemas (`ActorLogic`, `Serializer`). Manages file paths within a structured directory (`PathManager`) and logs artifacts to MLflow. Includes logic for auto-resuming from the latest checkpoint of the most recent previous run.
+*   **Centralized Data Persistence:** Handles saving and loading of application state (e.g., model checkpoints, replay buffers) using `cloudpickle` and Pydantic schemas (`ActorLogic`, `Serializer`). **Manages all file paths internally** within a structured directory (`<ROOT_DATA_DIR>/<app_name>/runs/<run_name>/`) based on the provided `TrieyeConfig`. Logs artifacts to MLflow. Includes logic for auto-resuming from the latest checkpoint of the most recent previous run.
 *   **Structured Configuration:** Uses Pydantic for clear, validated configuration (`TrieyeConfig`, `PersistenceConfig`, `StatsConfig`).
 *   **Testability:** Designed with dependency injection in mind, allowing components like MLflow/TensorBoard clients to be mocked during testing.
 
@@ -44,15 +46,15 @@ pip install -e .[dev]
 
 The library separates concerns into distinct components, orchestrated by the `TrieyeActor`:
 
-*   **`TrieyeActor` ([`trieye/actor.py`](trieye/actor.py)):** The central Ray actor (`@ray.remote`). Acts as a façade, receiving external calls (`log_event`, `save_training_state`, `load_initial_state`, `shutdown`). Manages thread safety (`threading.Lock`) and delegates core tasks to `ActorLogic`. Initializes and owns tracking clients (MLflow, TensorBoard) unless injected for testing. Handles actor lifecycle and shutdown.
+*   **`TrieyeActor` ([`trieye/actor.py`](trieye/actor.py)):** The central Ray actor (`@ray.remote`). Acts as a façade, receiving external calls (`log_event`, `save_training_state`, `load_initial_state`, `shutdown`). Manages thread safety (`threading.Lock`) and delegates core tasks to `ActorLogic`. Initializes and owns tracking clients (MLflow, TensorBoard) and the `PathManager` unless injected for testing. Handles actor lifecycle and shutdown. Provides methods like `get_actor_name()` and `get_run_base_dir_str()` for external components to query its identity and paths.
 *   **`ActorState` ([`trieye/actor_state.py`](trieye/actor_state.py)):** Manages the internal, mutable state within the actor: raw event buffers, latest metric values, event timestamps for rate calculation, and tracking of the last processed step/time. Provides methods for adding events, retrieving data for processing, clearing processed data, and getting/setting persistable state (e.g., `last_processed_step`).
 *   **`ActorLogic` ([`trieye/actor_logic.py`](trieye/actor_logic.py)):** Encapsulates the core business logic, independent of Ray actor specifics. Orchestrates interactions between `ActorState`, `PathManager`, `Serializer`, and `StatsProcessor`. Contains the logic for processing stats, saving/loading checkpoints and buffers, handling auto-resume, and saving configuration files.
-*   **`TrieyeConfig` ([`trieye/config.py`](trieye/config.py)):** Top-level Pydantic configuration model, containing `PersistenceConfig` and `StatsConfig`. Defines application/run names.
-*   **`PersistenceConfig` ([`trieye/config.py`](trieye/config.py)):** Defines directories, filenames, save frequencies, and MLflow tracking URI.
+*   **`TrieyeConfig` ([`trieye/config.py`](trieye/config.py)):** Top-level Pydantic configuration model, containing `PersistenceConfig` and `StatsConfig`. Defines application/run names. Passed to the `TrieyeActor` on initialization.
+*   **`PersistenceConfig` ([`trieye/config.py`](trieye/config.py)):** Defines the root data directory (`ROOT_DATA_DIR`), application name (`APP_NAME`), run name (`RUN_NAME`), buffer save frequency (`BUFFER_SAVE_FREQ_STEPS`), checkpoint frequency (`CHECKPOINT_SAVE_FREQ_STEPS`), auto-resume behavior (`AUTO_RESUME_LATEST`), and explicit load paths (`LOAD_CHECKPOINT_PATH`, `LOAD_BUFFER_PATH`). **Does NOT define subdirectory names or specific filenames; these are internal details managed by `PathManager`.**
 *   **`StatsConfig` ([`trieye/config.py`](trieye/config.py)):** Defines metric processing rules (aggregation, frequency, targets) via a list of `MetricConfig`.
 *   **`MetricConfig` ([`trieye/config.py`](trieye/config.py)):** Defines a single metric to be tracked (name, source event, aggregation, logging frequency/targets, etc.). Includes validation for rate metrics.
 *   **`RawMetricEvent`, `CheckpointData`, `BufferData`, `LoadedTrainingState`, `LogContext` ([`trieye/schemas.py`](trieye/schemas.py)):** Pydantic models for structuring data (events, saved state, logging context). `BufferData` stores `list[Any]`, allowing applications to store arbitrary buffer content. `CheckpointData` includes actor state for seamless resumption.
-*   **`PathManager` ([`trieye/path_manager.py`](trieye/path_manager.py)):** Manages the directory structure within `.trieye_data/<app_name>/runs/<run_name>/`. Provides methods for getting paths to checkpoints, buffers, logs, etc., and finding the latest previous run for auto-resuming.
+*   **`PathManager` ([`trieye/path_manager.py`](trieye/path_manager.py)):** **Internal component** responsible for deriving all necessary absolute paths (checkpoints, buffers, logs, TensorBoard, MLflow URI) based *only* on the `PersistenceConfig` provided (`ROOT_DATA_DIR`, `APP_NAME`, `RUN_NAME`). It encapsulates the directory structure logic (e.g., `<ROOT>/<APP>/runs/<RUN>/checkpoints/`).
 *   **`Serializer` ([`trieye/serializer.py`](trieye/serializer.py)):** Handles serialization/deserialization using `cloudpickle` (for checkpoints/buffers) and JSON (for configs). Includes logic to prepare optimizer state (move to CPU) before saving.
 *   **`StatsProcessor` ([`trieye/stats_processor.py`](trieye/stats_processor.py)):** Performs aggregation (mean, sum, rate, etc.) and logging logic based on `StatsConfig`. Interacts with MLflow Client and TensorBoard Writer. Used by `ActorLogic`.
 *   **`exceptions.py` ([`trieye/exceptions.py`](trieye/exceptions.py)):** Custom exception classes (`ConfigurationError`, `SerializationError`, `ProcessingError`).
@@ -89,12 +91,18 @@ my_metrics = DEFAULT_METRICS + [
     MetricConfig(name="Custom/MyValue", source="custom", aggregation="mean", log_frequency_steps=20)
 ]
 
+# --- Create TrieyeConfig ---
+# Provide app_name and optionally run_name.
+# Customize persistence behavior (frequencies, auto-resume) if needed.
+# Trieye will handle path generation internally.
 trieye_config = TrieyeConfig(
     app_name="my_rl_app",
     run_name=f"experiment_{time.strftime('%Y%m%d_%H%M%S')}",
-    persistence=PersistenceConfig( # Optional: Customize persistence
+    persistence=PersistenceConfig( # Optional: Customize persistence behavior
         BUFFER_SAVE_FREQ_STEPS=50, # Save buffer more frequently
-        ROOT_DATA_DIR=".my_app_data" # Example: change root dir
+        CHECKPOINT_SAVE_FREQ_STEPS=100, # Save checkpoint every 100 steps
+        AUTO_RESUME_LATEST=True, # Enable auto-resume
+        # ROOT_DATA_DIR=".my_app_data" # Example: change root dir if needed
     ),
     stats=StatsConfig( # Optional: Customize stats
         processing_interval_seconds=2.0, # Process stats every 2 seconds
@@ -108,20 +116,24 @@ if not ray.is_initialized():
     ray.init(logging_level=logging.WARNING)
 
 # 3. Start the TrieyeActor
-# Give the actor a unique name if you might need to get its handle later
-actor_name = "trieye_logger_main"
+# Give the actor a unique name based on the run_name for potential reconnection
+actor_name = f"trieye_actor_{trieye_config.run_name}"
 try:
     # Use get_actor for resilience if script restarts and actor still exists
     trieye_actor = ray.get_actor(actor_name)
     logger.info(f"Reconnected to existing TrieyeActor '{actor_name}'.")
 except ValueError:
     logger.info(f"Creating new TrieyeActor '{actor_name}'.")
+    # Pass the configured TrieyeConfig object
     trieye_actor = TrieyeActor.options(name=actor_name, lifetime="detached").remote(config=trieye_config)
 
 # Optional: Wait for actor to be ready by calling a method
 try:
     run_id = ray.get(trieye_actor.get_mlflow_run_id.remote(), timeout=10)
     logger.info(f"TrieyeActor ready. MLflow Run ID: {run_id}")
+    # Get the run directory managed by the actor (optional)
+    run_dir = ray.get(trieye_actor.get_run_base_dir_str.remote(), timeout=5)
+    logger.info(f"TrieyeActor managing run directory: {run_dir}")
 except Exception as e:
     logger.error(f"Error waiting for TrieyeActor: {e}. Exiting.")
     ray.shutdown()
@@ -138,6 +150,7 @@ my_optimizer_state: dict = {}
 # Load initial state (example)
 # Use the logic handler within the actor for loading
 logger.info("Attempting to load initial state...")
+# Actor handles finding the correct checkpoint/buffer based on its config
 initial_state = ray.get(trieye_actor.load_initial_state.remote())
 
 if initial_state.checkpoint_data:
@@ -214,10 +227,11 @@ try:
         trieye_actor.process_and_log.remote(current_step)
 
         # --- Save State Periodically ---
-        # Check if buffer should be saved based on frequency in config
+        # Check frequencies based on the config passed to the actor
         should_save_buffer = (current_step % trieye_config.persistence.BUFFER_SAVE_FREQ_STEPS == 0)
-        # Example: Save checkpoint every 20 steps
-        if current_step % 20 == 0:
+        should_save_checkpoint = (current_step % trieye_config.persistence.CHECKPOINT_SAVE_FREQ_STEPS == 0)
+
+        if should_save_checkpoint:
             logger.info(f"Requesting save at step {current_step}, save buffer: {should_save_buffer}")
             # Pass actual state dicts and buffer content
             mock_model_config = {"layers": 2} # Example config
@@ -230,7 +244,7 @@ try:
                 global_step=current_step,
                 episodes_played=episodes_played,
                 total_simulations_run=current_step * 100, # Example simulation count
-                save_buffer=should_save_buffer,
+                save_buffer=should_save_buffer, # Pass flag based on config check
                 model_config_dict=mock_model_config,
                 env_config_dict=mock_env_config,
                 user_data={"custom_info": "value"}, # Optional extra data
@@ -271,12 +285,19 @@ finally:
 
 ## Configuration Details
 
-*   **`TrieyeConfig`**: Top-level config.
+*   **`TrieyeConfig`**: Top-level config passed to the `TrieyeActor`.
     *   `app_name`: Namespace for data storage (`<ROOT_DATA_DIR>/<app_name>`).
     *   `run_name`: Specific identifier for the current run (defaults to timestamp).
     *   `persistence`: `PersistenceConfig` instance.
     *   `stats`: `StatsConfig` instance.
-*   **`PersistenceConfig`**: Defines directories (`ROOT_DATA_DIR`, `RUNS_DIR_NAME`, etc.), filenames (`LATEST_CHECKPOINT_FILENAME`, etc.), buffer save frequency (`BUFFER_SAVE_FREQ_STEPS`), and MLflow URI (`MLFLOW_TRACKING_URI` computed property). See [`trieye/config.py`](trieye/config.py) for all options.
+*   **`PersistenceConfig`**: Defines persistence behavior.
+    *   `ROOT_DATA_DIR`: Root directory for all Trieye data (default: `.trieye_data`).
+    *   `SAVE_BUFFER`: Whether to save the buffer (default: `True`).
+    *   `BUFFER_SAVE_FREQ_STEPS`: Save buffer every N steps (default: 1000).
+    *   `CHECKPOINT_SAVE_FREQ_STEPS`: Save checkpoint every N steps (default: 1000).
+    *   `AUTO_RESUME_LATEST`: Enable auto-resume from previous run (default: `True`).
+    *   `LOAD_CHECKPOINT_PATH`/`LOAD_BUFFER_PATH`: Explicit paths to load, overriding auto-resume (default: `None`).
+    *   **Note:** Specific paths like MLflow URI, TensorBoard dir, checkpoint dir are derived internally by `PathManager` based on `ROOT_DATA_DIR`, `APP_NAME`, and `RUN_NAME`.
 *   **`StatsConfig`**:
     *   `processing_interval_seconds`: How often the actor processes buffered stats (e.g., `1.0` for every second).
     *   `metrics`: A list of `MetricConfig` objects defining each metric to track.
