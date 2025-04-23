@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/lg/lab/trieye/mlruns/0/b65932826ab64f38a0988473b718bfce/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: b65932826ab64f38a0988473b718bfce
+run_name: mysterious-mink-9
+run_uuid: b65932826ab64f38a0988473b718bfce
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1745366839789
+status: 1
+tags: []
+user_id: lg

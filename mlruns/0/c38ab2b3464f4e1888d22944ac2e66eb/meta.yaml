@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/lg/lab/trieye/mlruns/0/c38ab2b3464f4e1888d22944ac2e66eb/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: c38ab2b3464f4e1888d22944ac2e66eb
+run_name: legendary-pig-465
+run_uuid: c38ab2b3464f4e1888d22944ac2e66eb
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1745366837664
+status: 1
+tags: []
+user_id: lg

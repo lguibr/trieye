@@ -1,0 +1,33 @@
+# File: trieye/.gitignore
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+*.whl
+
+# Virtual environment
+venv/
+.venv/
+
+# IDE files
+.idea/
+.vscode/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.prof
+
+# Data directory (if used during testing/dev)
+.trieye_data/
+
+# OS generated files
+.DS_Store
+Thumbs.db

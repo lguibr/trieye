@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/lg/lab/trieye/mlruns/0/19a40332fa62426fa3f8faafee183358/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 19a40332fa62426fa3f8faafee183358
+run_name: inquisitive-swan-798
+run_uuid: 19a40332fa62426fa3f8faafee183358
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1745367632596
+status: 1
+tags: []
+user_id: lg

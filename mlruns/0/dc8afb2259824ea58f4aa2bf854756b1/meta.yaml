@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/lg/lab/trieye/mlruns/0/dc8afb2259824ea58f4aa2bf854756b1/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: dc8afb2259824ea58f4aa2bf854756b1
+run_name: mysterious-ox-560
+run_uuid: dc8afb2259824ea58f4aa2bf854756b1
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1745366846763
+status: 1
+tags: []
+user_id: lg

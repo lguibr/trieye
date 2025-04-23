@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/lg/lab/trieye/mlruns/0/714b5613767848cab4007467eb5b72eb/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 714b5613767848cab4007467eb5b72eb
+run_name: bald-grouse-840
+run_uuid: 714b5613767848cab4007467eb5b72eb
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1745367630575
+status: 1
+tags: []
+user_id: lg

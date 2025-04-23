@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/lg/lab/trieye/mlruns/0/b673d5a9dc4140d690bc5d0e3d61b160/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: b673d5a9dc4140d690bc5d0e3d61b160
+run_name: puzzled-hound-656
+run_uuid: b673d5a9dc4140d690bc5d0e3d61b160
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1745367626524
+status: 1
+tags: []
+user_id: lg

@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/lg/lab/trieye/mlruns/0/d5065b507b814df69e175fce7bc12624/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: d5065b507b814df69e175fce7bc12624
+run_name: chill-perch-98
+run_uuid: d5065b507b814df69e175fce7bc12624
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1745366849057
+status: 1
+tags: []
+user_id: lg

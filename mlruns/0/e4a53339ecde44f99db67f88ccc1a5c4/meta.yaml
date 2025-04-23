@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/lg/lab/trieye/mlruns/0/e4a53339ecde44f99db67f88ccc1a5c4/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: e4a53339ecde44f99db67f88ccc1a5c4
+run_name: burly-whale-695
+run_uuid: e4a53339ecde44f99db67f88ccc1a5c4
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1745367622409
+status: 1
+tags: []
+user_id: lg

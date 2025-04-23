@@ -1,0 +1,85 @@
+Found 8 errors (8 fixed, 0 remaining).
+1 file reformatted, 19 files left unchanged
+Success: no issues found in 20 source files
+============================= test session starts ==============================
+platform darwin -- Python 3.10.13, pytest-8.3.5, pluggy-1.5.0 -- /Users/lg/lab/trieye/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/lg/lab/trieye
+configfile: pyproject.toml
+plugins: anyio-4.9.0, mock-3.14.0, cov-6.1.1
+collecting ... collected 45 items / 2 deselected / 43 selected
+
+tests/test_actor.py::test_actor_local_initialization PASSED              [  2%]
+tests/test_actor.py::test_actor_local_log_event PASSED                   [  4%]
+tests/test_actor.py::test_actor_local_log_batch_events PASSED            [  6%]
+tests/test_actor.py::test_actor_local_process_and_log PASSED             [  9%]
+tests/test_actor.py::test_actor_local_get_set_state PASSED               [ 11%]
+tests/test_actor_logic.py::test_logic_initialization PASSED              [ 13%]
+tests/test_actor_logic.py::test_logic_process_and_log_metrics PASSED     [ 16%]
+tests/test_actor_logic.py::test_logic_save_initial_config PASSED         [ 18%]
+tests/test_actor_logic.py::test_logic_save_training_state_no_buffer PASSED [ 20%]
+tests/test_actor_logic.py::test_logic_save_training_state_with_buffer PASSED [ 23%]
+tests/test_actor_logic.py::test_logic_load_initial_state_found PASSED    [ 25%]
+tests/test_actor_logic.py::test_logic_load_initial_state_not_found PASSED [ 27%]
+tests/test_actor_state.py::test_state_initialization PASSED              [ 30%]
+tests/test_actor_state.py::test_state_add_valid_event PASSED             [ 32%]
+tests/test_actor_state.py::test_state_add_invalid_event PASSED           [ 34%]
+tests/test_actor_state.py::test_state_add_non_event_object PASSED        [ 37%]
+tests/test_actor_state.py::test_state_get_data_to_process PASSED         [ 39%]
+tests/test_actor_state.py::test_state_clear_processed_data PASSED        [ 41%]
+tests/test_actor_state.py::test_state_get_log_context PASSED             [ 44%]
+tests/test_actor_state.py::test_state_update_last_processed PASSED       [ 46%]
+tests/test_actor_state.py::test_state_get_persistable_state PASSED       [ 48%]
+tests/test_actor_state.py::test_state_restore_from_state PASSED          [ 51%]
+tests/test_config.py::test_persistence_config_defaults PASSED            [ 53%]
+tests/test_config.py::test_stats_config_defaults PASSED                  [ 55%]
+tests/test_config.py::test_metric_config_validation PASSED               [ 58%]
+tests/test_config.py::test_trieye_config_defaults_and_sync PASSED        [ 60%]
+tests/test_path_manager.py::test_directory_creation PASSED               [ 62%]
+tests/test_path_manager.py::test_get_paths PASSED                        [ 65%]
+tests/test_path_manager.py::test_find_latest_run_dir PASSED              [ 67%]
+tests/test_path_manager.py::test_find_latest_run_dir_no_previous PASSED  [ 69%]
+tests/test_processor.py::test_processor_aggregation_and_logging PASSED   [ 72%]
+tests/test_serializer.py::test_save_load_checkpoint PASSED               [ 74%]
+tests/test_serializer.py::test_load_nonexistent_checkpoint PASSED        [ 76%]
+tests/test_serializer.py::test_load_invalid_checkpoint PASSED            [ 79%]
+tests/test_serializer.py::test_save_load_buffer PASSED                   [ 81%]
+tests/test_serializer.py::test_load_nonexistent_buffer PASSED            [ 83%]
+tests/test_serializer.py::test_prepare_optimizer_state PASSED            [ 86%]
+tests/test_serializer.py::test_prepare_buffer_data PASSED                [ 88%]
+tests/test_serializer.py::test_save_config_json PASSED                   [ 90%]
+tests/test_stats_processor.py::test_processor_aggregation_methods PASSED [ 93%]
+tests/test_stats_processor.py::test_processor_rate_calculation PASSED    [ 95%]
+tests/test_stats_processor.py::test_processor_should_log PASSED          [ 97%]
+tests/test_stats_processor.py::test_processor_full_process_and_log PASSED [100%]
+
+=============================== warnings summary ===============================
+.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:323
+  /Users/lg/lab/trieye/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+tests/test_actor.py::test_actor_local_initialization
+tests/test_actor.py::test_actor_local_log_event
+tests/test_actor.py::test_actor_local_log_batch_events
+tests/test_actor.py::test_actor_local_process_and_log
+tests/test_actor.py::test_actor_local_get_set_state
+  /Users/lg/lab/trieye/.venv/lib/python3.10/site-packages/ray/_private/client_mode_hook.py:103: DeprecationWarning: DeprecationWarning: local mode is an experimental feature that is no longer maintained and will be removed in the future.For debugging consider using Ray debugger. 
+    return func(*args, **kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.10.13-final-0 _______________
+
+Name                        Stmts   Miss  Cover   Missing
+---------------------------------------------------------
+trieye/actor.py               300    120    60%   69-72, 74-76, 97-98, 104-105, 121-122, 141-151, 159-165, 208-240, 244-263, 270-271, 273-274, 285-288, 290-293, 297-298, 315, 321-322, 327, 331-335, 358, 362-366, 379-382, 401-406, 423-426, 451, 469-470, 482-483, 488-489, 494-502, 507-512
+trieye/actor_logic.py         146     39    73%   24, 69-70, 73-81, 149-153, 170, 182-183, 199-201, 279, 285-288, 299-302, 306-314, 320-321, 329-330
+trieye/actor_state.py          65      0   100%
+trieye/config.py              113      8    93%   84-85, 89-90, 94-95, 162-163
+trieye/path_manager.py        146     67    54%   10, 62, 66, 104, 114-116, 123-125, 131-154, 163-192, 196-208, 212-218
+trieye/serializer.py          106     31    71%   36-38, 47-49, 62-67, 76-78, 96-99, 111-113, 125, 128-135, 139-141
+trieye/stats_processor.py     173     29    83%   17, 52-54, 58, 102-106, 119, 201-204, 227-228, 235-236, 249-250, 281-282, 298-302, 309, 317-320, 353, 361-362
+---------------------------------------------------------
+TOTAL                        1049    294    72%
+Required test coverage of 55.0% reached. Total coverage: 71.97%
+================ 43 passed, 2 deselected, 6 warnings in 16.46s =================

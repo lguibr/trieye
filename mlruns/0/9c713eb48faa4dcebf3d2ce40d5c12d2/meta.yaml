@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/lg/lab/trieye/mlruns/0/9c713eb48faa4dcebf3d2ce40d5c12d2/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 9c713eb48faa4dcebf3d2ce40d5c12d2
+run_name: resilient-gnat-317
+run_uuid: 9c713eb48faa4dcebf3d2ce40d5c12d2
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1745366842100
+status: 1
+tags: []
+user_id: lg

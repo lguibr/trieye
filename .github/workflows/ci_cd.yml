@@ -1,0 +1,77 @@
+# File: trieye/.github/workflows/ci_cd.yml
+name: Trieye CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[dev] # Install trieye editable with dev dependencies
+
+    - name: Lint with Ruff
+      run: |
+        ruff check .
+        ruff format --check .
+
+    - name: Type check with MyPy
+      run: |
+        mypy trieye/
+
+    - name: Test with Pytest
+      run: |
+        pytest
+
+    # - name: Upload coverage reports to Codecov
+    #   uses: codecov/codecov-action@v4.0.1
+    #   with:
+    #     token: ${{ secrets.CODECOV_TOKEN }} # Add token to repo secrets
+    #     slug: lguibr/trieye # Replace with your repo slug
+
+  # Optional: Build and Publish Job (Uncomment and configure if needed)
+  # build_and_publish:
+  #   needs: test # Run only if tests pass
+  #   if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags') # Run only on tag pushes
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     id-token: write # Needed for trusted publishing
+  #
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #
+  #   - name: Set up Python
+  #     uses: actions/setup-python@v5
+  #     with:
+  #       python-version: '3.10' # Use a specific version for building
+  #
+  #   - name: Install build dependencies
+  #     run: python -m pip install build twine --upgrade
+  #
+  #   - name: Build package
+  #     run: python -m build
+  #
+  #   - name: Publish package to PyPI
+  #     uses: pypa/gh-action-pypi-publish@release/v1
+  #     # with:
+  #     #   user: __token__
+  #     #   password: ${{ secrets.PYPI_API_TOKEN }} # Store API token in GitHub secrets
+

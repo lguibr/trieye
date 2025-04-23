@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/lg/lab/trieye/mlruns/0/09fbc98dc3b949d89c33f36d984ca0d9/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 09fbc98dc3b949d89c33f36d984ca0d9
+run_name: capable-squid-660
+run_uuid: 09fbc98dc3b949d89c33f36d984ca0d9
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1745367624446
+status: 1
+tags: []
+user_id: lg

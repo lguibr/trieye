@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/lg/lab/trieye/mlruns/0/02207e65222b47859d7b77b7052d54db/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 02207e65222b47859d7b77b7052d54db
+run_name: bedecked-hound-292
+run_uuid: 02207e65222b47859d7b77b7052d54db
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1745366851253
+status: 1
+tags: []
+user_id: lg
