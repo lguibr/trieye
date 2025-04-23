@@ -44,52 +44,6 @@ pip install -e .[dev]
 
 The library separates concerns into distinct components, orchestrated by the `TrieyeActor`:
 
-```mermaid
-graph LR
-    subgraph Application
-        AppLogic[Application Logic (e.g., Training Loop, Workers)]
-    end
-
-    subgraph TrieyeActor [Ray Actor: TrieyeActor]
-        direction LR
-        TA(TrieyeActor Façade) -- Manages --> AS[ActorState: Buffers, Timestamps]
-        TA -- Delegates --> AL[ActorLogic: Orchestration]
-        AL -- Uses --> PM[PathManager: File Paths]
-        AL -- Uses --> SER[Serializer: Save/Load]
-        AL -- Uses --> SP[StatsProcessor: Aggregation/Logging]
-        SP -- Interacts --> MC[MLflow Client]
-        SP -- Interacts --> TBW[TensorBoard Writer]
-    end
-
-    subgraph ExternalServices
-        MLFLOW[MLflow Tracking Server/Files]
-        TB[TensorBoard Event Files]
-        FS[Filesystem: .trieye_data/]
-    end
-
-    AppLogic -- log_event() --> TA
-    AppLogic -- save_training_state() --> TA
-    AppLogic -- load_initial_state() --> TA
-
-    TA -- Reads/Writes --> AS
-    TA -- Calls --> AL
-
-    AL -- Calls --> PM
-    AL -- Calls --> SER
-    AL -- Calls --> SP
-
-    SP -- Logs --> MC
-    SP -- Logs --> TBW
-
-    SER -- Writes/Reads --> FS
-    PM -- Manages --> FS
-    MC -- Writes --> MLFLOW
-    TBW -- Writes --> TB
-
-    style TrieyeActor fill:#f9f,stroke:#333,stroke-width:2px
-    style ExternalServices fill:#ccf,stroke:#333,stroke-width:1px
-```
-
 *   **`TrieyeActor` ([`trieye/actor.py`](trieye/actor.py)):** The central Ray actor (`@ray.remote`). Acts as a façade, receiving external calls (`log_event`, `save_training_state`, `load_initial_state`, `shutdown`). Manages thread safety (`threading.Lock`) and delegates core tasks to `ActorLogic`. Initializes and owns tracking clients (MLflow, TensorBoard) unless injected for testing. Handles actor lifecycle and shutdown.
 *   **`ActorState` ([`trieye/actor_state.py`](trieye/actor_state.py)):** Manages the internal, mutable state within the actor: raw event buffers, latest metric values, event timestamps for rate calculation, and tracking of the last processed step/time. Provides methods for adding events, retrieving data for processing, clearing processed data, and getting/setting persistable state (e.g., `last_processed_step`).
 *   **`ActorLogic` ([`trieye/actor_logic.py`](trieye/actor_logic.py)):** Encapsulates the core business logic, independent of Ray actor specifics. Orchestrates interactions between `ActorState`, `PathManager`, `Serializer`, and `StatsProcessor`. Contains the logic for processing stats, saving/loading checkpoints and buffers, handling auto-resume, and saving configuration files.
