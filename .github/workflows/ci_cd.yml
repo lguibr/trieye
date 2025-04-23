@@ -1,77 +1,100 @@
-# File: trieye/.github/workflows/ci_cd.yml
-name: Trieye CI/CD
+# File: .github/workflows/ci_cd.yml
+name: trieye CI/CD
 
 on:
   push:
     branches: [ "main" ]
+    tags: [ 'v*.*.*' ]  # Trigger on version tags like v0.1.0
   pull_request:
     branches: [ "main" ]
-  workflow_dispatch: # Allow manual trigger
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: read  # For actions/checkout
+  id-token: write # Needed if you're using OIDC
+  # If you do "classic" token-based publishing, you only need 'contents: read'.
 
 jobs:
+  lint-type-check:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff mypy
+          pip install -r requirements.txt
+
+      - name: Run Ruff Linter
+        run: ruff check .
+
+      - name: Run Ruff Formatter Check
+        run: ruff format --check .
+
+      - name: Run MyPy Type Checker
+        run: mypy trieye tests
+
   test:
+    name: Test & Coverage
+    needs: lint-type-check
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11"]
+        python-version: ['3.10', '3.11']
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e .[dev] # Install trieye editable with dev dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-mock codecov
 
-    - name: Lint with Ruff
-      run: |
-        ruff check .
-        ruff format --check .
+      - name: Run Pytest with Coverage
+        run: pytest --cov=trieye --cov-report=xml
 
-    - name: Type check with MyPy
-      run: |
-        mypy trieye/
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4.0.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}  # Make sure you set this in your GH repo secrets
+          slug: lguibr/trieye
+          files: ./coverage.xml
+          fail_ci_if_error: true
 
-    - name: Test with Pytest
-      run: |
-        pytest
+  publish:
+    name: Publish to PyPI
+    needs: test
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    # - name: Upload coverage reports to Codecov
-    #   uses: codecov/codecov-action@v4.0.1
-    #   with:
-    #     token: ${{ secrets.CODECOV_TOKEN }} # Add token to repo secrets
-    #     slug: lguibr/trieye # Replace with your repo slug
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-  # Optional: Build and Publish Job (Uncomment and configure if needed)
-  # build_and_publish:
-  #   needs: test # Run only if tests pass
-  #   if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags') # Run only on tag pushes
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     id-token: write # Needed for trusted publishing
-  #
-  #   steps:
-  #   - uses: actions/checkout@v4
-  #
-  #   - name: Set up Python
-  #     uses: actions/setup-python@v5
-  #     with:
-  #       python-version: '3.10' # Use a specific version for building
-  #
-  #   - name: Install build dependencies
-  #     run: python -m pip install build twine --upgrade
-  #
-  #   - name: Build package
-  #     run: python -m build
-  #
-  #   - name: Publish package to PyPI
-  #     uses: pypa/gh-action-pypi-publish@release/v1
-  #     # with:
-  #     #   user: __token__
-  #     #   password: ${{ secrets.PYPI_API_TOKEN }} # Store API token in GitHub secrets
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip build twine
 
+      - name: Build package
+        run: python -m build
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
