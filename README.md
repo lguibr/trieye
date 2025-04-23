@@ -7,7 +7,7 @@
 
 
 # Trieye Library
-<img src="docs/bitmap.png" alt="logo" width="300"/> <!-- Assuming logo is moved to docs -->
+<img src="bitmap.png" alt="logo" width="300"/>
 
 ## Overview
 
