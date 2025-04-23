@@ -1,4 +1,4 @@
-# File: trieye/trieye/__init__.py
+# File: trieye/__init__.py
 """
 Trieye Library: Asynchronous Stats & Persistence for ML Experiments using Ray.
 """
@@ -6,8 +6,10 @@ Trieye Library: Asynchronous Stats & Persistence for ML Experiments using Ray.
 from .actor import TrieyeActor
 from .actor_logic import ActorLogic
 from .actor_state import ActorState
+
+# Import DEFAULT_METRICS from config directly
 from .config import (
-    DEFAULT_METRICS,
+    DEFAULT_METRICS,  # <-- IMPORTED HERE
     AggregationMethod,
     DataSource,
     LogTarget,
@@ -34,16 +36,15 @@ from .schemas import (
 from .serializer import Serializer
 from .stats_processor import StatsProcessor
 
-__version__ = "0.1.0"
+__version__ = "0.1.3"  # Ensure version is updated if needed
 
 __all__ = [
-    "DEFAULT_METRICS",  # Export default metrics list
-    "ActorLogic",  # Added ActorLogic
+    "DEFAULT_METRICS",  # <-- ADDED TO __all__
     # Internal Components (exposed for potential extension/testing)
-    "ActorState",  # Added ActorState
+    "ActorLogic",
+    "ActorState",
     "AggregationMethod",
     "BufferData",
-    # Schemas & Types
     "CheckpointData",
     "ConfigurationError",
     "DataSource",
@@ -53,7 +54,8 @@ __all__ = [
     "MetricConfig",
     "PathManager",
     "PersistenceConfig",
-    "ProcessingError",  # Added ProcessingError
+    "ProcessingError",
+    # Schemas & Types
     "RawMetricEvent",
     "SerializationError",
     "Serializer",
